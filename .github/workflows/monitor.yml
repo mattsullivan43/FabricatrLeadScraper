@@ -3,7 +3,7 @@ name: monitor
 on:
   schedule:
     # Every 15 minutes. Do not go faster — Reddit throttles anonymous clients.
-    - cron: "*/15 * * * *"
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
