@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Record start time
+        run: echo "RUN_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
@@ -99,10 +102,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          START=$(date -d "${{ github.run_started_at }}" +%s 2>/dev/null || date +%s)
           NOW=$(date +%s)
-          WAIT=$(( 900 - (NOW - START) ))
-          [ "$WAIT" -lt 30 ] && WAIT=30
+          WAIT=$(( 900 - (NOW - ${RUN_START:-$NOW}) ))
+          [ "$WAIT" -lt 600 ] && WAIT=600   # never chain faster than 10 min even if the clock math is off
           echo "next run in ${WAIT}s"
           sleep "$WAIT"
           gh workflow run monitor.yml --ref main -f chain=true
