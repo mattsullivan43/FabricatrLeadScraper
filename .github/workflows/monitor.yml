@@ -47,7 +47,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25   # must exceed the 15-minute chain wait or GitHub cancels the run mid-sleep
     steps:
       - name: Record start time
         run: echo "RUN_START=$(date +%s)" >> "$GITHUB_ENV"
