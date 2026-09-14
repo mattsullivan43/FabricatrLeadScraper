@@ -1,0 +1,80 @@
+name: monitor
+
+on:
+  schedule:
+    # Every 15 minutes. Do not go faster — Reddit throttles anonymous clients.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print Slack messages to the log instead of posting; do not write state"
+        type: boolean
+        default: false
+      no_classify:
+        description: "Skip the Claude classifier (keyword layer only)"
+        type: boolean
+        default: false
+      probe:
+        description: "Only check which feeds are alive from the GitHub runner"
+        type: boolean
+        default: false
+      ignore_seen:
+        description: "Treat every entry as new (testing; combine with dry_run)"
+        type: boolean
+        default: false
+      reset_baseline:
+        description: "Forget all seen IDs and re-baseline (sends nothing this run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+
+      - name: Run monitor
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          ARGS=""
+          [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          [ "${{ inputs.no_classify }}" = "true" ] && ARGS="$ARGS --no-classify"
+          [ "${{ inputs.probe }}" = "true" ] && ARGS="$ARGS --probe"
+          [ "${{ inputs.ignore_seen }}" = "true" ] && ARGS="$ARGS --ignore-seen"
+          [ "${{ inputs.reset_baseline }}" = "true" ] && ARGS="$ARGS --reset-baseline"
+          echo "python monitor.py $ARGS"
+          python monitor.py $ARGS
+
+      - name: Commit seen state
+        if: ${{ inputs.dry_run != true && inputs.probe != true }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/seen.json
+          if git diff --cached --quiet; then
+            echo "No state change."
+            exit 0
+          fi
+          git commit -m "chore: update seen state [skip ci]"
+          # If someone pushed to main during this run, rebase our single state commit on top.
+          git pull --rebase origin main || { git rebase --abort 2>/dev/null; echo "rebase failed"; exit 1; }
+          git push origin HEAD:main

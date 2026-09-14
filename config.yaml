@@ -1,0 +1,203 @@
+# Fabricatr forum lead monitor — sources, keywords, limits.
+# Turn a source on/off with `enabled`. Nothing here is secret.
+
+settings:
+  user_agent: "fabricatr-lead-monitor/1.0 (+https://fabricatr.co; contact matt@fabricatr.co)"
+  request_timeout_s: 20
+  delay_between_requests_s: 10       # polite spacing between feed fetches (Reddit 429s if you burst)
+  max_classifier_calls_per_run: 40   # cost guard; extra keyword hits wait for the next run
+  excerpt_chars: 250
+  body_chars_for_classifier: 3000    # how much post body the classifier sees
+  model: claude-haiku-4-5-20251001
+  seen_retention_days: 30            # forget IDs not seen in any feed for this long
+  max_entry_age_hours: 72            # ignore old threads that resurface (bumped by a new reply)
+
+sources:
+  # ---------------------------------------------------------------- Tier 1: forums
+  - id: practical_machinist
+    name: Practical Machinist
+    tier: 1
+    enabled: true
+    # Per-subforum feeds (/forum/forums/<slug>.<id>/index.rss) are behind a Cloudflare
+    # challenge. The site-wide feed is open and tags every item with its subforum, so we
+    # read that and keep only the subforums listed below (key = XenForo node id).
+    url: https://www.practicalmachinist.com/forum/forums/-/index.rss
+    category_filter:
+      "49": Shop Management
+      "30": Fabrication
+      "21": CNC Machining
+      "38": General
+
+  - id: weldingweb
+    name: WeldingWeb
+    tier: 1
+    enabled: false   # DEAD: proof-of-work JS bot challenge in front of external.php (verified 2026-09-14)
+    url: https://weldingweb.com/vbforum/external.php?type=RSS2
+
+  - id: shop_floor_talk
+    name: Shop Floor Talk
+    tier: 1
+    enabled: false   # DEAD: Cloudflare challenge (verified 2026-09-14)
+    url: https://www.shopfloortalk.com/forums/external.php?type=RSS2
+
+  - id: cnczone
+    name: CNCZone (now cncarena.com)
+    tier: 1
+    enabled: false   # DEAD: redirects to en.cncarena.com, Cloudflare challenge (verified 2026-09-14)
+    url: https://www.cnczone.com/forums/external.php?type=RSS2
+
+  - id: fabricationforum
+    name: FabricationForum.com
+    tier: 1
+    enabled: false   # DEAD: bot challenge wall (verified 2026-09-14)
+    url: https://www.fabricationforum.com/forums/-/index.rss
+
+  - id: thefabricator_forum
+    name: The Fabricator / FMA forum
+    tier: 1
+    enabled: false   # DEAD: Cloudflare challenge (verified 2026-09-14)
+    url: https://www.thefabricator.com/forum
+
+  - id: steel_detail
+    name: Steel-Detail (groups.io)
+    tier: 1
+    enabled: false   # UNVERIFIED: groups.io rate-limited the probe; archives may be members-only. See README.
+    url: https://groups.io/g/steel-detail/rss
+
+  - id: aws_forum
+    name: AWS forum
+    tier: 1
+    enabled: false   # DEAD: Cloudflare challenge (verified 2026-09-14)
+    url: https://app.aws.org/forum
+
+  - id: eng_tips_steel
+    name: Eng-Tips
+    tier: 1
+    enabled: false   # DEAD: Cloudflare challenge (verified 2026-09-14)
+    url: https://www.eng-tips.com/
+
+  # ---------------------------------------------------------------- Tier 2: Reddit
+  # Multireddit syntax keeps this to 2 requests per run. Reddit throttles anonymous
+  # clients hard, so keep the cron at 15 min and the UA descriptive.
+  - id: reddit_trade
+    name: Reddit
+    tier: 2
+    enabled: true
+    url: https://www.reddit.com/r/Welding+Fabrication+metalworking+Machinists+Machining+CNC+sheetmetal+Blacksmith+Ironworkers+Millwrights+HVAC+PlasmaCutting/new/.rss?limit=100
+
+  - id: reddit_business
+    name: Reddit
+    tier: 2
+    enabled: true
+    # Reddit 429s a second anonymous request made within ~30s of the first, so wait a
+    # full minute after the trade feed. Costs a minute of runner time; public repo = free.
+    delay_before_s: 60
+    url: https://www.reddit.com/r/sweatystartup+Entrepreneur+manufacturing+ERP+Bluecollar/new/.rss?limit=100
+
+  # ---------------------------------------------------------------- Tier 3: Google Alerts
+  # Create each alert at https://www.google.com/alerts with "Deliver to: RSS feed",
+  # then paste the feed URL here and set enabled: true. See README.
+  - id: galert_fabrication_shop_software
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: '"fabrication shop software"'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+  - id: galert_fab_shop_software
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: '"fab shop" software'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+  - id: galert_welding_shop_software
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: '"welding shop" software OR spreadsheet'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+  - id: galert_steel_fabrication_erp
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: '"steel fabrication" ERP'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+  - id: galert_job_shop_erp
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: '"job shop" ERP OR software'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+  - id: galert_shop_management_software
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: '"shop management software" welding OR fabrication'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+  - id: galert_vendors
+    name: Google Alerts
+    tier: 3
+    enabled: false
+    query: 'JobBoss OR "E2 Shop System" OR ProShop OR Fulcrum OR "Global Shop"'
+    url: PASTE_GOOGLE_ALERT_RSS_URL
+
+# ---------------------------------------------------------------- Layer 1 keywords
+# Case-insensitive, whole-word/phrase matching on title + body. A post passes if it
+# matches ANY software word or ANY pain word. `paired_only` words count only when a
+# pain word also matched (QuickBooks alone is just bookkeeping chatter).
+keywords:
+  software:
+    - shop management software
+    - job shop software
+    - quoting software
+    - estimating software
+    - scheduling software
+    - ERP
+    - MRP
+    - JobBoss
+    - E2
+    - E2 Shop System
+    - ProShop
+    - Fulcrum
+    - Global Shop
+    - Tekla
+    - Fishbowl
+    - Katana
+    - MIE Trak
+    - Shoptech
+    - Paperless Parts
+  pain:
+    - spreadsheet
+    - spreadsheets
+    - Excel
+    - whiteboard
+    - job board
+    - job tracking
+    - tracking jobs
+    - track jobs
+    - keep track of jobs
+    - quoting
+    - quotes taking forever
+    - estimating
+    - work orders
+    - travelers
+    - paperwork
+    - invoicing
+    - scheduling
+    - how do you guys keep track
+    - how do you keep track
+    - what do you use to
+    - what software
+    - which software
+    - recommend software
+    - recommend a software
+    - looking for software
+    - software recommendation
+    - software recommendations
+  paired_only:
+    - QuickBooks
