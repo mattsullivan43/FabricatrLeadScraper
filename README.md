@@ -139,7 +139,15 @@ Edit the cron line in `.github/workflows/monitor.yml`:
 ```
 
 Do not go below 15 minutes: Reddit rate-limits anonymous clients. Keep the minutes off
-:00/:15/:30/:45; GitHub delays or skips schedules that fire when everyone else's do. To pause everything, disable the workflow in the
+:00/:15/:30/:45; GitHub delays or skips schedules that fire when everyone else's do.
+
+**The cron is a backup, not the main clock.** GitHub's scheduler is best-effort and did not
+fire at all for this repo on day one, so each run dispatches the next one itself
+("Schedule next run in 15 minutes" step, using the built-in `GITHUB_TOKEN`). To change the
+cadence, edit the `900` (seconds) in that step. To **stop the loop**, disable the workflow in
+the Actions tab; the pending dispatch dies with it. To **restart the loop** after re-enabling,
+run the workflow manually with the `chain` box ticked. Each run occupies a runner for the full
+15 minutes, which is free on a public repo. To pause everything, disable the workflow in the
 Actions tab (Actions → monitor → ⋯ → Disable workflow).
 
 ## How to reset the baseline

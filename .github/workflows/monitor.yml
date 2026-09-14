@@ -31,9 +31,14 @@ on:
         description: "Post one test message to the Slack webhook and exit"
         type: boolean
         default: false
+      chain:
+        description: "Keep the 15-minute loop going: after this run, wait and dispatch the next one"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  actions: write   # lets the run dispatch the next run (self-chaining 15-minute loop)
 
 concurrency:
   group: monitor
@@ -84,3 +89,21 @@ jobs:
           # If someone pushed to main during this run, rebase our single state commit on top.
           git pull --rebase origin main || { git rebase --abort 2>/dev/null; echo "rebase failed"; exit 1; }
           git push origin HEAD:main
+
+      # GitHub's cron scheduler is best-effort and was not firing at all for this repo, so the
+      # loop keeps itself alive: wait out the rest of the 15-minute slot, then dispatch the next
+      # run. The concurrency group above collapses any overlap with a cron-triggered run.
+      # Runs with probe / dry_run / slack_test never chain, so test clicks don't start a second loop.
+      - name: Schedule next run in 15 minutes
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.chain == true) && inputs.probe != true && inputs.dry_run != true && inputs.slack_test != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          START=$(date -d "${{ github.run_started_at }}" +%s 2>/dev/null || date +%s)
+          NOW=$(date +%s)
+          WAIT=$(( 900 - (NOW - START) ))
+          [ "$WAIT" -lt 30 ] && WAIT=30
+          echo "next run in ${WAIT}s"
+          sleep "$WAIT"
+          gh workflow run monitor.yml --ref main -f chain=true
+          echo "dispatched next run at $(date -u +%H:%M:%SZ)"
