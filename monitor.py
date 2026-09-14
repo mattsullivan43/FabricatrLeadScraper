@@ -336,10 +336,23 @@ def format_slack(item: dict, reason: str, excerpt_chars: int) -> str:
     )
 
 
-def post_slack(webhook: str, text: str, timeout: int = 15) -> None:
-    resp = requests.post(webhook, json={"text": text, "unfurl_links": False}, timeout=timeout)
-    if resp.status_code != 200 or resp.text.strip() != "ok":
-        raise RuntimeError(f"Slack webhook HTTP {resp.status_code}: {resp.text[:200]}")
+def post_slack(webhook: str, text: str, timeout: int = 15, attempts: int = 3) -> None:
+    """POST to the incoming webhook; retry on network errors, 429 and 5xx. Raises after the last attempt."""
+    last = None
+    for i in range(1, attempts + 1):
+        try:
+            resp = requests.post(webhook, json={"text": text, "unfurl_links": False}, timeout=timeout)
+        except requests.RequestException as e:
+            last = f"{e.__class__.__name__}: {e}"
+        else:
+            if resp.status_code == 200 and resp.text.strip() == "ok":
+                return
+            last = f"HTTP {resp.status_code}: {resp.text[:200]}"
+            if resp.status_code < 500 and resp.status_code != 429:
+                break  # 4xx other than 429 (bad/revoked webhook): retrying won't help
+        if i < attempts:
+            time.sleep(3 * i)
+    raise RuntimeError(f"Slack webhook failed after {attempts} attempt(s): {last}")
 
 
 # ----------------------------------------------------------------------------- main
@@ -510,9 +523,11 @@ def main() -> int:
                 try:
                     post_slack(webhook, msg)
                     sent += 1
+                    log(f"SENT       -> Slack OK")
                 except Exception as e:
                     slack_errors += 1
-                    log(f"SLACK ERROR for \"{it['title']}\": {e}")
+                    log(f"SLACK ERROR for \"{it['title']}\": {e} — left unseen, will retry next run")
+                    continue  # do NOT mark seen; next run re-classifies and re-sends
         else:
             no += 1
             log(f"NO         {it['source_display']} \"{it['title']}\" — {reason}")
