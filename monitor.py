@@ -10,6 +10,7 @@ Flags:
   --probe          fetch every enabled feed, report alive/dead + item counts, exit
   --ignore-seen    treat every entry as new (testing only, pairs well with --dry-run)
   --reset-baseline forget all seen IDs and re-run the baseline (marks everything seen, sends nothing)
+  --slack-test     post one fixed test message to the Slack webhook and exit
 
 Env: SLACK_WEBHOOK_URL (required unless --dry-run), OPENAI_API_KEY (required unless --no-classify).
 """
@@ -350,7 +351,18 @@ def main() -> int:
     ap.add_argument("--probe", action="store_true")
     ap.add_argument("--ignore-seen", action="store_true")
     ap.add_argument("--reset-baseline", action="store_true")
+    ap.add_argument("--slack-test", action="store_true")
     args = ap.parse_args()
+
+    if args.slack_test:
+        webhook = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+        if not webhook:
+            log("CONFIG ERROR: SLACK_WEBHOOK_URL is not set")
+            return 2
+        post_slack(webhook, f"🔩 Fab lead monitor connected — test message from GitHub Actions at {iso(now_utc())}. "
+                            "Real alerts look like: bold title, quoted excerpt, Why line, link.")
+        log("SLACK TEST: message posted OK")
+        return 0
 
     cfg = load_config()
     settings = cfg["settings"]

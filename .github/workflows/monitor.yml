@@ -26,6 +26,10 @@ on:
         description: "Forget all seen IDs and re-baseline (sends nothing this run)"
         type: boolean
         default: false
+      slack_test:
+        description: "Post one test message to the Slack webhook and exit"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -61,11 +65,12 @@ jobs:
           [ "${{ inputs.probe }}" = "true" ] && ARGS="$ARGS --probe"
           [ "${{ inputs.ignore_seen }}" = "true" ] && ARGS="$ARGS --ignore-seen"
           [ "${{ inputs.reset_baseline }}" = "true" ] && ARGS="$ARGS --reset-baseline"
+          [ "${{ inputs.slack_test }}" = "true" ] && ARGS="$ARGS --slack-test"
           echo "python monitor.py $ARGS"
           python monitor.py $ARGS
 
       - name: Commit seen state
-        if: ${{ inputs.dry_run != true && inputs.probe != true }}
+        if: ${{ inputs.dry_run != true && inputs.probe != true && inputs.slack_test != true }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

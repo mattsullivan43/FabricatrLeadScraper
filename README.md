@@ -74,6 +74,7 @@ OPENAI_API_KEY=sk-... .venv/bin/python monitor.py --dry-run --ignore-seen      #
 | `--probe` | Fetch every enabled feed and print alive / dead + item counts. Nothing else. |
 | `--ignore-seen` | Treat every entry as new. Testing only; pair with `--dry-run`. |
 | `--reset-baseline` | Forget all seen IDs and re-baseline (marks everything seen, sends nothing). |
+| `--slack-test` | Post one fixed test message to the webhook and exit. Confirms the channel is wired up. |
 
 All of these are also available as checkboxes on the manual **Run workflow** button in the Actions tab.
 
