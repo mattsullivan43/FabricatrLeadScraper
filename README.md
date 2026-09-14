@@ -15,7 +15,7 @@ path that writes to a forum or to Reddit.
 every 15 min ──> fetch enabled feeds (config.yaml)
              ──> drop entries already in state/seen.json
              ──> Layer 1: keyword match on title + body (config.yaml → keywords)
-             ──> Layer 2: Claude Haiku 4.5 yes/no + one-sentence reason (cap: 40 calls/run)
+             ──> Layer 2: OpenAI gpt-4.1-nano yes/no + one-sentence reason (cap: 40 calls/run)
              ──> YES → Slack webhook, one message per lead
              ──> commit state/seen.json back to the repo ([skip ci])
 ```
@@ -36,7 +36,7 @@ Why: shop owner describing job tracking pain, mentions spreadsheet + whiteboard
    a private repo on the Free plan runs out of minutes around day 20 at a 15-min cadence).
 2. In the repo: Settings → Secrets and variables → Actions → New repository secret. Add:
    - `SLACK_WEBHOOK_URL` — Slack incoming webhook for the channel you want pinged
-   - `ANTHROPIC_API_KEY` — Anthropic API key used by the classifier
+   - `OPENAI_API_KEY` — OpenAI API key used by the classifier
 3. Actions → **monitor** → Run workflow with `probe = true` to confirm feeds are reachable
    from GitHub's runners.
 4. The first real run is the **baseline**: it marks everything currently in the feeds as
@@ -53,7 +53,7 @@ last time they were seen.
 | `config.yaml` | Sources (with `tier` and `enabled` flags), keyword lists, limits, model |
 | `state/seen.json` | Seen entry IDs; committed by the workflow after every run |
 | `.github/workflows/monitor.yml` | Cron + manual-run workflow |
-| `requirements.txt` | Pinned deps: feedparser, requests, anthropic, PyYAML |
+| `requirements.txt` | Pinned deps: feedparser, requests, PyYAML (OpenAI is called over plain HTTP) |
 
 ## Running locally
 
@@ -63,13 +63,14 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requi
 
 .venv/bin/python monitor.py --probe                              # which feeds are alive
 .venv/bin/python monitor.py --dry-run --ignore-seen --no-classify  # keyword layer only, prints hits
-ANTHROPIC_API_KEY=sk-... .venv/bin/python monitor.py --dry-run --ignore-seen   # full pipeline, Slack messages to stdout
+OPENAI_API_KEY=sk-... .venv/bin/python monitor.py --dry-run --ignore-seen      # full pipeline, Slack messages to stdout
+# (or put OPENAI_API_KEY=... in a local .env file — it is git-ignored — and run: set -a; . ./.env; set +a)
 ```
 
 | Flag | Effect |
 |---|---|
 | `--dry-run` | Print Slack messages to stdout instead of posting. Never writes `state/seen.json`. |
-| `--no-classify` | Skip the Claude layer; every keyword hit counts as a lead. No API key needed. |
+| `--no-classify` | Skip the OpenAI layer; every keyword hit counts as a lead. No API key needed. |
 | `--probe` | Fetch every enabled feed and print alive / dead + item counts. Nothing else. |
 | `--ignore-seen` | Treat every entry as new. Testing only; pair with `--dry-run`. |
 | `--reset-baseline` | Forget all seen IDs and re-baseline (marks everything seen, sends nothing). |
@@ -153,8 +154,9 @@ weird.
 
 `max_classifier_calls_per_run: 40` in `config.yaml`. Keyword hits beyond the cap are logged
 as `SKIP` and left unseen so they get classified on the next run. Each call is roughly 700
-input + 60 output tokens on Haiku 4.5, about a tenth of a cent. Worst case with the cap
-maxed on every run is about $4/day; a normal day is cents.
+input + 60 output tokens on gpt-4.1-nano ($0.10 / $0.40 per million), about a hundredth of a
+cent. Worst case with the cap maxed on every run is well under $1/day; a normal day is
+fractions of a cent. Change `settings.model` in `config.yaml` to use a different OpenAI chat model.
 
 ## Source status (verified 2026-09-14)
 

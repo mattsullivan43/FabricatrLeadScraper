@@ -2,16 +2,16 @@
 """Fabricatr forum lead monitor.
 
 Polls RSS/Atom feeds listed in config.yaml, keyword-filters new entries, runs a
-Claude classifier on the hits, and posts confirmed leads to a Slack webhook.
+cheap OpenAI classifier on the hits, and posts confirmed leads to a Slack webhook.
 
 Flags:
   --dry-run        print Slack messages to stdout instead of posting; never writes state
-  --no-classify    skip the Claude layer; every keyword hit is treated as a lead
+  --no-classify    skip the OpenAI classifier; every keyword hit is treated as a lead
   --probe          fetch every enabled feed, report alive/dead + item counts, exit
   --ignore-seen    treat every entry as new (testing only, pairs well with --dry-run)
   --reset-baseline forget all seen IDs and re-run the baseline (marks everything seen, sends nothing)
 
-Env: SLACK_WEBHOOK_URL (required unless --dry-run), ANTHROPIC_API_KEY (required unless --no-classify).
+Env: SLACK_WEBHOOK_URL (required unless --dry-run), OPENAI_API_KEY (required unless --no-classify).
 """
 
 from __future__ import annotations
@@ -257,36 +257,55 @@ def display_source(source: dict, entry, category_label: str | None) -> str:
 
 # ----------------------------------------------------------------------------- classifier
 
-def make_client():
-    import anthropic  # imported lazily so --no-classify works without a key
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
-    return anthropic.Anthropic()
+
+def make_client():
+    """Return a requests.Session with the OpenAI auth header (plain HTTP, no SDK)."""
+    sess = requests.Session()
+    sess.headers.update({
+        "Authorization": f"Bearer {os.environ['OPENAI_API_KEY'].strip()}",
+        "Content-Type": "application/json",
+    })
+    return sess
 
 
 def classify(client, model: str, item: dict, body_chars: int) -> tuple[bool, str]:
-    import anthropic
-
     user = (
         f"Source: {item['source_display']}\n"
         f"Title: {item['title']}\n"
         f"Post:\n{item['body'][:body_chars] or '(no body text in feed)'}\n\n"
         f"{CLASSIFIER_QUESTION}"
     )
-    try:
-        resp = client.messages.create(
-            model=model,
-            max_tokens=200,
-            system=CLASSIFIER_SYSTEM,
-            messages=[{"role": "user", "content": user}],
-        )
-    except anthropic.RateLimitError as e:
-        return False, f"classifier rate limited: {e.message}"
-    except anthropic.APIStatusError as e:
-        return False, f"classifier API error {e.status_code}: {e.message}"
-    except anthropic.APIConnectionError as e:
-        return False, f"classifier connection error: {e}"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": CLASSIFIER_SYSTEM},
+            {"role": "user", "content": user},
+        ],
+        "max_completion_tokens": 200,
+        "response_format": {"type": "json_object"},
+    }
+    for attempt in (1, 2):
+        try:
+            resp = client.post(OPENAI_URL, json=payload, timeout=60)
+        except requests.RequestException as e:
+            return False, f"classifier connection error: {e.__class__.__name__}"
+        if resp.status_code == 429 and attempt == 1:
+            time.sleep(min(int(resp.headers.get("retry-after", "5") or 5), 30))
+            continue
+        break
+    if resp.status_code != 200:
+        try:
+            msg = resp.json().get("error", {}).get("message", "")
+        except ValueError:
+            msg = resp.text[:200]
+        return False, f"classifier API error {resp.status_code}: {msg[:160]}"
 
-    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    try:
+        text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        return False, f"unexpected classifier response shape: {e.__class__.__name__}"
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
         return False, f"unparseable classifier output: {text[:120]!r}"
@@ -341,8 +360,8 @@ def main() -> int:
     if not args.dry_run and not args.probe and not webhook:
         log("CONFIG ERROR: SLACK_WEBHOOK_URL is not set (use --dry-run to test without it)")
         return 2
-    if not args.no_classify and not args.probe and not os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        log("CONFIG ERROR: ANTHROPIC_API_KEY is not set (use --no-classify to test without it)")
+    if not args.no_classify and not args.probe and not os.environ.get("OPENAI_API_KEY", "").strip():
+        log("CONFIG ERROR: OPENAI_API_KEY is not set (use --no-classify to test without it)")
         return 2
 
     log(f"=== fabricatr lead monitor — {iso(now_utc())} — {len(sources)} enabled source(s)"

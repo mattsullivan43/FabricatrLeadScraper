@@ -8,7 +8,7 @@ settings:
   max_classifier_calls_per_run: 40   # cost guard; extra keyword hits wait for the next run
   excerpt_chars: 250
   body_chars_for_classifier: 3000    # how much post body the classifier sees
-  model: claude-haiku-4-5-20251001
+  model: gpt-4.1-nano                 # OpenAI chat model for the yes/no classifier (cheapest that works)
   seen_retention_days: 30            # forget IDs not seen in any feed for this long
   max_entry_age_hours: 72            # ignore old threads that resurface (bumped by a new reply)
 
