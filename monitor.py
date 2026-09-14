@@ -44,8 +44,10 @@ CLASSIFIER_QUESTION = (
     "Is this a metal fabrication, welding, steel, machine, or job shop owner/manager describing a "
     "pain point or asking for recommendations about how they quote, track jobs, schedule, or run "
     "the business side of the shop? Answer NO for hobbyists, for people asking technical "
-    "welding/machining questions, for people selling something, and for posts where the keyword "
-    "is incidental.\n\n"
+    "welding/machining questions, for people selling something, for software developers or "
+    "consultants building or implementing ERP/business systems, for employees asking about their own "
+    "job or career, and for posts where the keyword is incidental. The person must plausibly own or "
+    "run a shop.\n\n"
     'Respond with only this JSON, no prose, no code fences: {"lead": true or false, "reason": "<one sentence>"}'
 )
 
