@@ -2,7 +2,8 @@ name: monitor
 
 on:
   schedule:
-    # Every 15 minutes. Do not go faster — Reddit throttles anonymous clients.
+    # Every 15 minutes on off-peak minutes: GitHub delays or drops schedules that fire
+    # on :00/:15/:30/:45 alongside everyone else. Do not go faster — Reddit throttles.
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:

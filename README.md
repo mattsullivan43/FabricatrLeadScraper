@@ -135,11 +135,11 @@ NOs for the same reason, drop it or make it more specific.
 Edit the cron line in `.github/workflows/monitor.yml`:
 
 ```yaml
-    - cron: "*/15 * * * *"
+    - cron: "7,22,37,52 * * * *"
 ```
 
-Do not go below 15 minutes: Reddit rate-limits anonymous clients and GitHub often delays
-scheduled runs by a few minutes anyway. To pause everything, disable the workflow in the
+Do not go below 15 minutes: Reddit rate-limits anonymous clients. Keep the minutes off
+:00/:15/:30/:45; GitHub delays or skips schedules that fire when everyone else's do. To pause everything, disable the workflow in the
 Actions tab (Actions → monitor → ⋯ → Disable workflow).
 
 ## How to reset the baseline
